@@ -9,8 +9,12 @@ on `keras` and `Tensorflow`.
 
 How to use the script?
 ----------------------
+TBD
+
+
 
 Dependencies:
+-------------
 * numpy
 * pandas
 * sklearn
