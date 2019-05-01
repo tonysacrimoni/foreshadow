@@ -2,15 +2,10 @@ import pandas as pd
 from collections import deque
 import random
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LSTM, CuDNNLSTM, BatchNormalization
-from tensorflow.keras.callbacks import TensorBoard
-from tensorflow.keras.callbacks import ModelCheckpoint, ModelCheckpoint
 import time
 from sklearn import preprocessing
 
-SEQ_LEN = 60  # how long of a preceeding sequence to collect for RNN
+SEQ_LEN = 60  # how long of a preceding sequence to collect for RNN
 FUTURE_PERIOD_PREDICT = 3  # how far into the future are we trying to predict?
 RATIO_TO_PREDICT = "LTC-USD"
 EPOCHS = 10  # how many passes through our data
@@ -19,9 +14,10 @@ NAME = f"{SEQ_LEN}-SEQ-{FUTURE_PERIOD_PREDICT}-PRED-{int(time.time())}"
 
 
 def classify(current, future):
-    if float(future) > float(current):  # if the future price is higher than the current, that's a buy, or a 1
+
+    if float(future) > float(current):
         return 1
-    else:  # otherwise... it's a 0!
+    else:
         return 0
 
 
@@ -56,8 +52,9 @@ def preprocess_df(df):
         elif target == 1:  # otherwise if the target is a 1...
             buys.append([seq, target])  # it's a buy!
 
-    random.shuffle(buys)  # shuffle the buys
-    random.shuffle(sells)  # shuffle the sells!
+    # Shuffle to avoid ordering effects.
+    random.shuffle(buys)
+    random.shuffle(sells)
 
     lower = min(len(buys), len(sells))  # what's the shorter length?
 
@@ -74,97 +71,48 @@ def preprocess_df(df):
         X.append(seq)  # X is the sequences
         y.append(target)  # y is the targets/labels (buys vs sell/notbuy)
 
-    return np.array(X), y  # return X and y...and make X a numpy array!
+    return np.array(X), y  # return X and y...and make X a numpy ar
 
 
-main_df = pd.DataFrame() # begin empty
+def prepare_model_input_data():
 
-ratios = ["BTC-USD", "LTC-USD", "BCH-USD", "ETH-USD"]  # the 4 ratios we want to consider
-for ratio in ratios:  # begin iteration
+    main_df = pd.DataFrame()
 
-    ratio = ratio.split('.csv')[0]  # split away the ticker from the file-name
-    print(ratio)
-    dataset = f'crypto_data/{ratio}.csv'  # get the full path to the file.
-    df = pd.read_csv(dataset, names=['time', 'low', 'high', 'open', 'close', 'volume'])  # read in specific file
+    ratios = ["BTC-USD", "LTC-USD", "BCH-USD", "ETH-USD"]  # the 4 ratios we want to consider
+    for ratio in ratios:  # begin iteration
 
-    # rename volume and close to include the ticker so we can still which close/volume is which:
-    df.rename(columns={"close": f"{ratio}_close", "volume": f"{ratio}_volume"}, inplace=True)
+        ratio = ratio.split('.csv')[0]  # split away the ticker from the file-name
+        dataset = f'crypto_data/{ratio}.csv'  # get the full path to the file.
+        df = pd.read_csv(dataset, names=['time', 'low', 'high', 'open', 'close', 'volume'])  # read in specific file
 
-    df.set_index("time", inplace=True)  # set time as index so we can join them on this shared time
-    df = df[[f"{ratio}_close", f"{ratio}_volume"]]  # ignore the other columns besides price and volume
+        # rename volume and close to include the ticker so we can still which close/volume is which:
+        df = df.rename(columns={"close": f"{ratio}_close", "volume": f"{ratio}_volume"})
 
-    if len(main_df)==0:  # if the dataframe is empty
-        main_df = df  # then it's just the current df
-    else:  # otherwise, join this data to the main one
-        main_df = main_df.join(df)
+        df = df.set_index("time")  # set time as index so we can join them on this shared time
+        df = df[[f"{ratio}_close", f"{ratio}_volume"]]  # ignore the other columns besides price and volume
 
-main_df.fillna(method="ffill", inplace=True)  # if there are gaps in data, use previously known values
-main_df.dropna(inplace=True)
+        if len(main_df)==0:  # if the dataframe is empty
+            main_df = df  # then it's just the current df
+        else:  # otherwise, join this data to the main one
+            main_df = main_df.join(df)
 
-main_df['future'] = main_df[f'{RATIO_TO_PREDICT}_close'].shift(-FUTURE_PERIOD_PREDICT)
-main_df['target'] = list(map(classify, main_df[f'{RATIO_TO_PREDICT}_close'], main_df['future']))
+    main_df = main_df.fillna(method="ffill")  # if there are gaps in data, use previously known values
+    main_df = main_df.dropna()
 
-main_df.dropna(inplace=True)
+    main_df['future'] = main_df[f'{RATIO_TO_PREDICT}_close'].shift(-FUTURE_PERIOD_PREDICT)
+    main_df['target'] = list(map(classify, main_df[f'{RATIO_TO_PREDICT}_close'], main_df['future']))
 
-## here, split away some slice of the future data from the main main_df.
-times = sorted(main_df.index.values)
-last_5pct = sorted(main_df.index.values)[-int(0.05*len(times))]
+    main_df = main_df.dropna()
 
-validation_main_df = main_df[(main_df.index >= last_5pct)]
-main_df = main_df[(main_df.index < last_5pct)]
+    ## here, split away some slice of the future data from the main_df.
+    times = sorted(main_df.index.values)
+    last_5pct = sorted(main_df.index.values)[-int(0.05*len(times))]
 
-train_x, train_y = preprocess_df(main_df)
-validation_x, validation_y = preprocess_df(validation_main_df)
+    validation_main_df = main_df[(main_df.index >= last_5pct)]
+    main_df = main_df[(main_df.index < last_5pct)]
 
-print(f"train data: {len(train_x)} validation: {len(validation_x)}")
-print(f"Dont buys: {train_y.count(0)}, buys: {train_y.count(1)}")
-print(f"VALIDATION Dont buys: {validation_y.count(0)}, buys: {validation_y.count(1)}")
-
-model = Sequential()
-model.add(CuDNNLSTM(128, input_shape=(train_x.shape[1:]), return_sequences=True))
-model.add(Dropout(0.2))
-model.add(BatchNormalization())
-
-model.add(CuDNNLSTM(128, return_sequences=True))
-model.add(Dropout(0.1))
-model.add(BatchNormalization())
-
-model.add(CuDNNLSTM(128))
-model.add(Dropout(0.2))
-model.add(BatchNormalization())
-
-model.add(Dense(32, activation='relu'))
-model.add(Dropout(0.2))
-
-model.add(Dense(2, activation='softmax'))
+    train_x, train_y = preprocess_df(main_df)
+    validation_x, validation_y = preprocess_df(validation_main_df)
 
 
-opt = tf.keras.optimizers.Adam(lr=0.001, decay=1e-6)
-
-# Compile model
-model.compile(
-    loss='sparse_categorical_crossentropy',
-    optimizer=opt,
-    metrics=['accuracy']
-)
-
-tensorboard = TensorBoard(log_dir="logs/{}".format(NAME))
-
-filepath = "RNN_Final-{epoch:02d}-{val_acc:.3f}"  # unique file name that will include the epoch and the validation acc for that epoch
-checkpoint = ModelCheckpoint("models/{}.model".format(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')) # saves only the best ones
-
-# Train model
-history = model.fit(
-    train_x, train_y,
-    batch_size=BATCH_SIZE,
-    epochs=EPOCHS,
-    validation_data=(validation_x, validation_y),
-    callbacks=[tensorboard, checkpoint],
-)
-
-# Score model
-score = model.evaluate(validation_x, validation_y, verbose=0)
-print('Test loss:', score[0])
-print('Test accuracy:', score[1])
-# Save model
-model.save("models/{}".format(NAME))
+    return (train_x, train_y, validation_x, validation_y)
