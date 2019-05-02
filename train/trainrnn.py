@@ -3,7 +3,19 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, CuDNNLSTM, BatchNormalization
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.keras.callbacks import ModelCheckpoint
-from preprocess import prepare_model_input_data
+import time
+from sentdexdata.preprocess import prepare_model_input_data
+
+
+SEQ_LEN = 60  # how long of a preceding sequence to collect for RNN
+FUTURE_PERIOD_PREDICT = 3  # how far into the future are we trying to predict?
+RATIO_TO_PREDICT = "LTC-USD"
+EPOCHS = 1  # how many passes through our data
+BATCH_SIZE = 64  # how many batches? Try smaller batch if you're getting OOM (out of memory) errors.
+NAME = f"{SEQ_LEN}-SEQ-{FUTURE_PERIOD_PREDICT}-PRED-{int(time.time())}"
+
+# Initialise training and validation data.
+train_x, train_y, validation_x, validation_y = prepare_model_input_data()
 
 
 def build_model():
@@ -44,7 +56,7 @@ tensorboard = TensorBoard(log_dir="logs/{}".format(NAME))
 filepath = "RNN_Final-{epoch:02d}-{val_acc:.3f}"
 
 checkpoint = ModelCheckpoint(
-    "./models/{}.model".format(
+    "models/{}.model".format(
         filepath,
         monitor='val_acc',
         verbose=1,
@@ -53,20 +65,19 @@ checkpoint = ModelCheckpoint(
     )
 )
 
-train_x, train_y, validation_x, validation_y = prepare_model_input_data()
-
 # Train model.
 history = model.fit(
     train_x, train_y,
     batch_size=BATCH_SIZE,
     epochs=EPOCHS,
     validation_data=(validation_x, validation_y),
-    callbacks=[tensorboard, checkpoint],
+    callbacks=[tensorboard, checkpoint]
 )
+
 
 # Score model.
 score = model.evaluate(validation_x, validation_y, verbose=0)
 print('Test loss:', score[0])
 print('Test accuracy:', score[1])
 # Save model.
-model.save("./models/{}".format(NAME))
+model.save("models/{}".format(NAME))

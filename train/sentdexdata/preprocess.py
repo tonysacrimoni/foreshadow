@@ -2,7 +2,6 @@ import pandas as pd
 from collections import deque
 import random
 import numpy as np
-import time
 from sklearn import preprocessing
 
 SEQ_LEN = 60  # how long of a preceding sequence to collect for RNN
@@ -10,7 +9,7 @@ FUTURE_PERIOD_PREDICT = 3  # how far into the future are we trying to predict?
 RATIO_TO_PREDICT = "LTC-USD"
 EPOCHS = 10  # how many passes through our data
 BATCH_SIZE = 64  # how many batches? Try smaller batch if you're getting OOM (out of memory) errors.
-NAME = f"{SEQ_LEN}-SEQ-{FUTURE_PERIOD_PREDICT}-PRED-{int(time.time())}"
+
 
 
 def classify(current, future):
@@ -82,7 +81,7 @@ def prepare_model_input_data():
     for ratio in ratios:  # begin iteration
 
         ratio = ratio.split('.csv')[0]  # split away the ticker from the file-name
-        dataset = f'crypto_data/{ratio}.csv'  # get the full path to the file.
+        dataset = f'~/Development/foreshadow/train/sentdexdata/crypto_data/{ratio}.csv'  # get the full path to the file.
         df = pd.read_csv(dataset, names=['time', 'low', 'high', 'open', 'close', 'volume'])  # read in specific file
 
         # rename volume and close to include the ticker so we can still which close/volume is which:
